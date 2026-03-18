@@ -472,7 +472,7 @@ function SplashScreen() {
       />
       <div className="flex-1 flex flex-col items-center justify-center">
         <StenoLogo className="w-[88px] text-white" />
-        <span className="text-[13px] text-zinc-600 mt-2">v1.0.0</span>
+        <span className="text-[13px] text-zinc-600 mt-2">v1.1.0</span>
       </div>
       <div className="h-12 flex items-center justify-center shrink-0">
         <HolyLogo className="w-[70px] text-zinc-500" />
@@ -1033,7 +1033,7 @@ function AboutTab() {
         {/* Version */}
         <div className="border-b border-zinc-800 pb-3 mb-3">
           <h3 className="text-[13px] font-semibold text-white">Version</h3>
-          <p className="text-[12px] text-zinc-400 mt-1.5">Steno v1.0.0</p>
+          <p className="text-[12px] text-zinc-400 mt-1.5">Steno v1.1.0</p>
           <a
             href="mailto:odysseas@holy.gd"
             className="text-[12px] text-zinc-400 underline underline-offset-2 hover:text-white transition-colors"

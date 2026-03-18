@@ -1,6 +1,6 @@
 {
   "name": "steno",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "A minimal, offline transcription tool for Mac",
   "author": "holy.gd",
