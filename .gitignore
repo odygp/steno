@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-electron/
+lib/
+models/
+*.dmg
+*.app
+out/
+.DS_Store

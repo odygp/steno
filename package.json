@@ -1,0 +1,58 @@
+{
+  "name": "steno",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A minimal, offline transcription tool for Mac",
+  "author": "holy.gd",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "setup:whisper": "bash scripts/setup-whisper.sh",
+    "package": "electron-builder"
+  },
+  "dependencies": {
+    "framer-motion": "^11.15.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.4.20",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vite-plugin-electron": "^0.28.8",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "gd.holy.steno",
+    "productName": "Steno",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg",
+      "icon": "build/app-icon.icns"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "!models",
+      "!lib",
+      "!scripts",
+      "!src"
+    ],
+    "extraResources": [
+      {
+        "from": "lib/whisper.cpp/build/bin/",
+        "to": "whisper",
+        "filter": ["whisper-cli", "main"]
+      }
+    ]
+  }
+}
