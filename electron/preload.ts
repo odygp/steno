@@ -2,8 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('steno', {
   // ── Main window APIs ──
-  transcribe: (filePath: string, modelId: string) =>
-    ipcRenderer.invoke('transcribe', filePath, modelId),
+  transcribe: (filePath: string, modelId: string, language: string) =>
+    ipcRenderer.invoke('transcribe', filePath, modelId, language),
+
+  cancelTranscription: () => ipcRenderer.invoke('cancel-transcription'),
 
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 

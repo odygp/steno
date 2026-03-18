@@ -5,6 +5,7 @@ import {
   Trash2,
   ArrowDownRight,
   Download,
+  ChevronDown,
 } from 'lucide-react'
 import { StenoLogo, HolyLogo } from './logos'
 
@@ -13,11 +14,12 @@ import { StenoLogo, HolyLogo } from './logos'
 declare global {
   interface Window {
     steno: {
-      transcribe: (filePath: string, modelId: string) => Promise<{
+      transcribe: (filePath: string, modelId: string, language: string) => Promise<{
         success: boolean
         text?: string
         error?: string
       }>
+      cancelTranscription: () => Promise<void>
       getPathForFile: (file: File) => string
       onProgress: (
         cb: (data: { step: string; percent: number }) => void
@@ -89,6 +91,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [selectedModel, setSelectedModel] = useState<string>('small')
   const [models, setModels] = useState<ModelInfo[]>([])
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('auto')
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({})
 
   const refreshModels = useCallback(async () => {
@@ -211,7 +214,7 @@ export default function App() {
     setPercent(0)
     setError('')
 
-    const result = await window.steno.transcribe(filePath, selectedModel)
+    const result = await window.steno.transcribe(filePath, selectedModel, selectedLanguage)
 
     if (result.success) {
       await window.steno.openTranscriptionWindow(result.text!, fileName)
@@ -220,11 +223,17 @@ export default function App() {
       setFileName('')
       setFileSize('')
       setFileExt('')
+    } else if (result.error === 'cancelled') {
+      setActionState('file-ready')
     } else {
       setError(result.error || 'Unknown error')
       setActionState('error')
     }
-  }, [filePath, fileName, selectedModel, models])
+  }, [filePath, fileName, selectedModel, selectedLanguage, models])
+
+  const handleCancelTranscription = useCallback(async () => {
+    await window.steno.cancelTranscription()
+  }, [])
 
   const handleUploadOther = useCallback(() => {
     setActionState('idle')
@@ -236,7 +245,7 @@ export default function App() {
   // ── Render ──
 
   return (
-    <div className="h-screen w-screen bg-zinc-950 text-white flex flex-col overflow-hidden select-none font-sans">
+    <div className="h-screen w-screen bg-zinc-950 text-white flex flex-col overflow-hidden select-none font-sans rounded-[24px]">
       <AnimatePresence mode="wait">
         {phase === 'loading' ? (
           <motion.div key="loading" {...fade} className="flex-1" />
@@ -256,6 +265,7 @@ export default function App() {
             step={step}
             percent={percent}
             fileName={fileName}
+            onCancel={handleCancelTranscription}
           />
         ) : (
           <motion.div key="main" {...fade} className="flex flex-col h-full">
@@ -325,6 +335,8 @@ export default function App() {
                         selectedModel={selectedModel}
                         onSelectModel={setSelectedModel}
                         onSwitchToModels={() => setTab('models')}
+                        selectedLanguage={selectedLanguage}
+                        onSelectLanguage={setSelectedLanguage}
                       />
                     ) : actionState === 'error' ? (
                       <ErrorView
@@ -460,7 +472,7 @@ function SplashScreen() {
       />
       <div className="flex-1 flex flex-col items-center justify-center">
         <StenoLogo className="w-[88px] text-white" />
-        <span className="text-[13px] text-zinc-600 mt-2">v0.1</span>
+        <span className="text-[13px] text-zinc-600 mt-2">v1.0.0</span>
       </div>
       <div className="h-12 flex items-center justify-center shrink-0">
         <HolyLogo className="w-[70px] text-zinc-500" />
@@ -549,6 +561,69 @@ function DropZone({
 
 // ── File Ready View ──
 
+// ── Whisper supported languages ──
+
+const WHISPER_LANGUAGES: { code: string; name: string }[] = [
+  { code: 'auto', name: 'Auto' },
+  { code: 'af', name: 'Afrikaans' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'hy', name: 'Armenian' },
+  { code: 'az', name: 'Azerbaijani' },
+  { code: 'be', name: 'Belarusian' },
+  { code: 'bs', name: 'Bosnian' },
+  { code: 'bg', name: 'Bulgarian' },
+  { code: 'ca', name: 'Catalan' },
+  { code: 'zh', name: 'Chinese' },
+  { code: 'hr', name: 'Croatian' },
+  { code: 'cs', name: 'Czech' },
+  { code: 'da', name: 'Danish' },
+  { code: 'nl', name: 'Dutch' },
+  { code: 'en', name: 'English' },
+  { code: 'et', name: 'Estonian' },
+  { code: 'fi', name: 'Finnish' },
+  { code: 'fr', name: 'French' },
+  { code: 'gl', name: 'Galician' },
+  { code: 'de', name: 'German' },
+  { code: 'el', name: 'Greek' },
+  { code: 'he', name: 'Hebrew' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'hu', name: 'Hungarian' },
+  { code: 'is', name: 'Icelandic' },
+  { code: 'id', name: 'Indonesian' },
+  { code: 'it', name: 'Italian' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'kn', name: 'Kannada' },
+  { code: 'kk', name: 'Kazakh' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'lv', name: 'Latvian' },
+  { code: 'lt', name: 'Lithuanian' },
+  { code: 'mk', name: 'Macedonian' },
+  { code: 'ms', name: 'Malay' },
+  { code: 'mr', name: 'Marathi' },
+  { code: 'mi', name: 'Maori' },
+  { code: 'ne', name: 'Nepali' },
+  { code: 'no', name: 'Norwegian' },
+  { code: 'fa', name: 'Persian' },
+  { code: 'pl', name: 'Polish' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'ro', name: 'Romanian' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'sr', name: 'Serbian' },
+  { code: 'sk', name: 'Slovak' },
+  { code: 'sl', name: 'Slovenian' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'sw', name: 'Swahili' },
+  { code: 'sv', name: 'Swedish' },
+  { code: 'tl', name: 'Tagalog' },
+  { code: 'ta', name: 'Tamil' },
+  { code: 'th', name: 'Thai' },
+  { code: 'tr', name: 'Turkish' },
+  { code: 'uk', name: 'Ukrainian' },
+  { code: 'ur', name: 'Urdu' },
+  { code: 'vi', name: 'Vietnamese' },
+  { code: 'cy', name: 'Welsh' },
+]
+
 function FileReadyView({
   fileName,
   fileSize,
@@ -559,6 +634,8 @@ function FileReadyView({
   selectedModel,
   onSelectModel,
   onSwitchToModels,
+  selectedLanguage,
+  onSelectLanguage,
 }: {
   fileName: string
   fileSize: string
@@ -569,9 +646,18 @@ function FileReadyView({
   selectedModel: string
   onSelectModel: (id: string) => void
   onSwitchToModels: () => void
+  selectedLanguage: string
+  onSelectLanguage: (lang: string) => void
 }) {
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false)
+  const [langSearch, setLangSearch] = useState('')
+  const selectedLangName = WHISPER_LANGUAGES.find((l) => l.code === selectedLanguage)?.name || 'Auto'
+  const filteredLanguages = langSearch
+    ? WHISPER_LANGUAGES.filter((l) => l.name.toLowerCase().startsWith(langSearch.toLowerCase()))
+    : WHISPER_LANGUAGES
+
   return (
-    <div className="flex flex-col flex-1">
+    <div className="flex flex-col flex-1 relative">
       <FileCard
         fileName={fileName}
         fileSize={fileSize}
@@ -579,42 +665,99 @@ function FileReadyView({
         onRemove={onRemove}
       />
 
-      {/* Model Selector */}
-      <div className="mt-4">
-        <p className="text-[11px] text-zinc-500 mb-2">Select Model</p>
-        <div className="flex gap-2">
-          {models.map((model) => {
-            const isSelected = model.id === selectedModel
-            const isDownloaded = model.status === 'downloaded'
-            return (
-              <button
-                key={model.id}
-                onClick={() => {
-                  if (!isDownloaded) {
-                    onSwitchToModels()
-                  } else {
-                    onSelectModel(model.id)
-                  }
-                }}
-                className={`flex-1 h-[33px] rounded-lg text-sm text-center flex items-center justify-center gap-1.5 transition-colors ${
-                  isSelected && isDownloaded
-                    ? 'bg-zinc-800 border border-white text-white'
-                    : 'bg-zinc-900 border border-zinc-700 text-zinc-500'
-                }`}
-                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              >
-                {!isDownloaded && <Download className="w-4 h-4 opacity-50" />}
-                {model.name}
-              </button>
-            )
-          })}
+      <div className="flex flex-col gap-3 mt-6">
+        {/* Model Selector Container */}
+        <div className="bg-[#161616] border border-zinc-700 rounded-lg p-3">
+          <p className="text-[11px] text-zinc-500 mb-3">Select Model</p>
+          <div className="flex gap-2">
+            {models.map((model) => {
+              const isSelected = model.id === selectedModel
+              const isDownloaded = model.status === 'downloaded'
+              return (
+                <button
+                  key={model.id}
+                  onClick={() => {
+                    if (!isDownloaded) {
+                      onSwitchToModels()
+                    } else {
+                      onSelectModel(model.id)
+                    }
+                  }}
+                  className={`flex-1 h-[33px] rounded-lg text-sm text-center flex items-center justify-center gap-1.5 transition-colors ${
+                    isSelected && isDownloaded
+                      ? 'bg-[#1e1e1e] border border-white text-white'
+                      : 'bg-[#161616] border border-zinc-700 text-zinc-500'
+                  }`}
+                  style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                >
+                  {!isDownloaded && <Download className="w-4 h-4 opacity-50" />}
+                  {model.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Language Selector Container */}
+        <div className="bg-[#161616] border border-zinc-700 rounded-lg p-3">
+          <p className="text-[11px] text-zinc-500 mb-2">Select Language</p>
+          <div className="relative">
+            <button
+              onClick={() => setLangDropdownOpen(!langDropdownOpen)}
+              className="w-full h-[33px] bg-[#1e1e1e] border border-zinc-700 rounded-lg px-3 flex items-center justify-between text-[12px] text-white transition-colors hover:border-zinc-500"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            >
+              {selectedLangName}
+              <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
+            </button>
+            {langDropdownOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => { setLangDropdownOpen(false); setLangSearch('') }}
+                />
+                <div className="absolute top-[37px] left-0 right-0 z-20 bg-[#1e1e1e] border border-zinc-700 rounded-lg shadow-lg overflow-hidden">
+                  <div className="p-2 border-b border-zinc-700">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={langSearch}
+                      onChange={(e) => setLangSearch(e.target.value)}
+                      placeholder="Search language..."
+                      className="w-full bg-transparent text-[12px] text-white placeholder-zinc-500 outline-none"
+                    />
+                  </div>
+                  <div className="max-h-[170px] overflow-y-auto">
+                    {filteredLanguages.map((lang) => (
+                      <button
+                        key={lang.code}
+                        onClick={() => {
+                          onSelectLanguage(lang.code)
+                          setLangDropdownOpen(false)
+                          setLangSearch('')
+                        }}
+                        className={`w-full px-3 py-2 text-left text-[12px] hover:bg-white/10 transition-colors ${
+                          lang.code === selectedLanguage ? 'text-white' : 'text-zinc-400'
+                        }`}
+                      >
+                        {lang.name}
+                      </button>
+                    ))}
+                    {filteredLanguages.length === 0 && (
+                      <p className="px-3 py-2 text-[12px] text-zinc-500">No results</p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="flex-1" />
       <button
         onClick={onTranscribe}
-        className="w-full h-8 bg-white text-black text-[13px] font-medium rounded-md hover:bg-zinc-200 transition-colors"
+        className="w-full h-8 bg-white text-black text-[13px] font-semibold rounded-lg hover:bg-zinc-200 transition-colors"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
         Transcribe
@@ -699,10 +842,12 @@ function ProcessingScreen({
   step,
   percent,
   fileName,
+  onCancel,
 }: {
   step: string
   percent: number
   fileName: string
+  onCancel: () => void
 }) {
   return (
     <motion.div {...fade} className="flex flex-col h-full items-center justify-center px-10 relative">
@@ -711,44 +856,66 @@ function ProcessingScreen({
         className="absolute top-0 left-0 right-0 h-12"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       />
-      {/* Pulsing dot */}
-      <motion.div
-        className="w-3 h-3 rounded-full bg-white mb-8"
-        animate={{
-          opacity: [0.15, 1, 0.15],
-          scale: [0.8, 1, 0.8],
-        }}
-        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-      />
 
-      {/* Step label */}
-      <AnimatePresence mode="wait">
-        <motion.p
-          key={step}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.2 }}
-          className="text-[14px] text-white font-medium text-center"
-        >
-          {step}
-        </motion.p>
-      </AnimatePresence>
+      {/* Center content */}
+      <div className="flex flex-col items-center gap-8">
+        {/* Pulsing dot + step label */}
+        <div className="flex flex-col items-center gap-[25px]">
+          <motion.div
+            className="w-3 h-3 rounded-full bg-white"
+            animate={{
+              opacity: [0.15, 1, 0.15],
+              scale: [0.8, 1, 0.8],
+            }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={step}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2 }}
+              className="text-[16px] text-white text-center"
+            >
+              {step}
+            </motion.p>
+          </AnimatePresence>
+        </div>
 
-      {/* Progress bar */}
-      <div className="w-80 h-4 bg-zinc-800 rounded-full overflow-hidden mt-8">
-        <motion.div
-          className="h-full bg-white rounded-full"
-          initial={{ width: 0 }}
-          animate={{ width: `${percent}%` }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
-        />
+        {/* Progress bar */}
+        <div className="w-full h-4 bg-white/15 rounded-full overflow-hidden">
+          <motion.div
+            className="h-full bg-white rounded-full"
+            initial={{ width: 0 }}
+            animate={{ width: `${percent}%` }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+          />
+        </div>
       </div>
 
-      {/* File name */}
-      <p className="text-[13px] text-zinc-600 mt-6 text-center truncate max-w-[280px]">
-        {fileName}
-      </p>
+      {/* File name + percentage */}
+      <div className="flex flex-col items-center gap-1 mt-8">
+        <p className="text-[12px] text-white/50 text-center truncate max-w-[280px]">
+          {fileName}
+        </p>
+        <p className="text-[12px] text-white/50 text-center">
+          {percent}%
+        </p>
+      </div>
+
+      {/* Cancel button — pinned to bottom */}
+      <div
+        className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-zinc-950/40 to-transparent backdrop-blur-[2px]"
+      >
+        <button
+          onClick={onCancel}
+          className="w-full h-8 rounded-lg border border-white/10 text-[13px] font-semibold text-white/50 hover:text-white/80 hover:border-white/20 transition-colors"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
+          Cancel Transcription
+        </button>
+      </div>
     </motion.div>
   )
 }
@@ -831,9 +998,10 @@ function AboutTab() {
           <h3 className="text-[13px] font-semibold text-white">About</h3>
           <p className="text-[12px] text-zinc-400 leading-relaxed mt-1.5">
             <strong className="text-zinc-300">Steno</strong> processes audio and video files locally
-            to generate highly accurate Greek text transcriptions. Built on the Whisper AI model and
-            optimized for Apple Silicon, it runs entirely offline to ensure complete privacy, zero API
-            costs, and instant extraction without upload delays.
+            to generate highly accurate text transcriptions. It auto-detects the spoken language or lets
+            you pick one manually. Built on the Whisper AI model and optimized for Apple Silicon, it runs
+            entirely offline to ensure complete privacy, zero API costs, and instant extraction without
+            upload delays.
           </p>
         </div>
 
@@ -865,9 +1033,9 @@ function AboutTab() {
         {/* Version */}
         <div className="border-b border-zinc-800 pb-3 mb-3">
           <h3 className="text-[13px] font-semibold text-white">Version</h3>
-          <p className="text-[12px] text-zinc-400 mt-1.5">Steno v0.1</p>
+          <p className="text-[12px] text-zinc-400 mt-1.5">Steno v1.0.0</p>
           <a
-            href="#"
+            href="mailto:odysseas@holy.gd"
             className="text-[12px] text-zinc-400 underline underline-offset-2 hover:text-white transition-colors"
           >
             Report a bug or Suggest a Feature

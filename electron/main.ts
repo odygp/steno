@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import path from 'path'
 import fs from 'fs'
-import { transcribe } from './whisper'
+import { transcribe, cancelTranscription } from './whisper'
 import {
   getAllModelsStatus,
   getModelInfo,
@@ -18,7 +19,7 @@ let mainWindow: BrowserWindow | null = null
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 400,
-    height: 600,
+    height: 640,
     resizable: false,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 12, y: 18 },
@@ -68,7 +69,29 @@ function createTranscriptionWindow(text: string, fileName: string) {
 }
 
 app.setName('Steno')
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  createWindow()
+
+  // Check for updates (skip in dev)
+  if (!process.env.VITE_DEV_SERVER_URL) {
+    autoUpdater.checkForUpdatesAndNotify()
+  }
+})
+
+autoUpdater.on('update-downloaded', () => {
+  dialog
+    .showMessageBox({
+      type: 'info',
+      title: 'Update Ready',
+      message: 'A new version of Steno has been downloaded. Restart to apply the update?',
+      buttons: ['Restart', 'Later'],
+    })
+    .then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall()
+      }
+    })
+})
 
 app.on('window-all-closed', () => {
   app.quit()
@@ -89,19 +112,26 @@ ipcMain.handle('show-open-dialog', async () => {
   return result.filePaths[0] || null
 })
 
-ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string) => {
-  console.log('[steno] transcribe:', filePath, 'model:', modelId)
+ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string, language: string) => {
+  console.log('[steno] transcribe:', filePath, 'model:', modelId, 'lang:', language)
 
   const onProgress = (step: string, percent: number) => {
     mainWindow?.webContents.send('transcription:progress', { step, percent })
   }
 
   try {
-    const text = await transcribe(filePath, modelId, onProgress)
+    const text = await transcribe(filePath, modelId, language, onProgress)
     return { success: true, text }
   } catch (error: any) {
+    if (error.message === 'Transcription cancelled') {
+      return { success: false, error: 'cancelled' }
+    }
     return { success: false, error: error.message }
   }
+})
+
+ipcMain.handle('cancel-transcription', () => {
+  cancelTranscription()
 })
 
 ipcMain.handle(

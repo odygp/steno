@@ -12,6 +12,7 @@
     "package": "electron-builder"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "framer-motion": "^11.15.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
@@ -36,22 +37,28 @@
     "productName": "Steno",
     "mac": {
       "category": "public.app-category.productivity",
-      "target": "dmg",
+      "target": ["dmg", "zip"],
       "icon": "build/app-icon.icns"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "odygp",
+      "repo": "steno"
+    },
     "files": [
-      "dist/**/*",
+      "dist/index.html",
+      "dist/assets/**/*",
       "dist-electron/**/*",
-      "!models",
-      "!lib",
-      "!scripts",
-      "!src"
+      "!node_modules"
     ],
     "extraResources": [
       {
         "from": "lib/whisper.cpp/build/bin/",
         "to": "whisper",
-        "filter": ["whisper-cli", "main"]
+        "filter": [
+          "whisper-cli",
+          "main"
+        ]
       }
     ]
   }

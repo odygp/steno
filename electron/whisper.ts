@@ -91,11 +91,28 @@ function convertToWav(inputPath: string): Promise<string> {
   })
 }
 
+// ── Active process tracking (for cancellation) ──
+
+let activeWhisperProcess: ReturnType<typeof spawn> | null = null
+let activeWavPath: string | null = null
+
+export function cancelTranscription(): void {
+  if (activeWhisperProcess) {
+    activeWhisperProcess.kill('SIGTERM')
+    activeWhisperProcess = null
+  }
+  if (activeWavPath) {
+    fs.unlink(activeWavPath, () => {})
+    activeWavPath = null
+  }
+}
+
 // ── Main transcription pipeline ──
 
 export async function transcribe(
   filePath: string,
   modelId: string,
+  language: string,
   onProgress: ProgressCallback
 ): Promise<string> {
   const whisperPath = getWhisperPath()
@@ -110,6 +127,7 @@ export async function transcribe(
   // Step 1 — Convert
   onProgress('Preparing audio…', 5)
   const wavPath = await convertToWav(filePath)
+  activeWavPath = wavPath
 
   // Step 2 — Warm up
   onProgress('Warming up Neural Engine…', 15)
@@ -117,7 +135,7 @@ export async function transcribe(
   return new Promise((resolve, reject) => {
     const args = [
       '-m', modelPath,
-      '-l', 'el',
+      '-l', language,
       '-f', wavPath,
       '--no-timestamps',
       '--print-progress',
@@ -125,6 +143,7 @@ export async function transcribe(
     ]
 
     const whisper = spawn(whisperPath, args, { env: shellEnv })
+    activeWhisperProcess = whisper
     let stdout = ''
     let stderr = ''
 
@@ -149,9 +168,16 @@ export async function transcribe(
       }
     })
 
-    whisper.on('close', (code) => {
+    whisper.on('close', (code, signal) => {
+      activeWhisperProcess = null
       // Clean up temp file
       fs.unlink(wavPath, () => {})
+      activeWavPath = null
+
+      if (signal === 'SIGTERM') {
+        reject(new Error('Transcription cancelled'))
+        return
+      }
 
       if (code === 0) {
         onProgress('Finalizing…', 95)
@@ -172,7 +198,9 @@ export async function transcribe(
     })
 
     whisper.on('error', (err) => {
+      activeWhisperProcess = null
       fs.unlink(wavPath, () => {})
+      activeWavPath = null
       reject(new Error(`Failed to start whisper: ${err.message}`))
     })
   })
