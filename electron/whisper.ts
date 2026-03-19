@@ -1,4 +1,4 @@
-import { spawn, execSync } from 'child_process'
+import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -7,22 +7,16 @@ import { getModelPath as getModelFilePath, ModelId } from './models'
 
 type ProgressCallback = (step: string, percent: number) => void
 
-// Electron doesn't inherit the user's shell PATH on macOS.
-// Resolve Homebrew paths so we can find ffmpeg and set DYLD paths.
-const BREW_PREFIX = fs.existsSync('/opt/homebrew/bin')
-  ? '/opt/homebrew'
-  : '/usr/local'
-
-const SHELL_PATH = [
-  `${BREW_PREFIX}/bin`,
-  '/usr/bin',
-  '/bin',
-  '/usr/sbin',
-  '/sbin',
-  process.env.PATH,
-].join(':')
-
-const shellEnv = { ...process.env, PATH: SHELL_PATH }
+// Resolve the bundled ffmpeg binary path.
+function getFfmpegPath(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'ffmpeg', 'ffmpeg')
+  }
+  // In development, use ffmpeg-static from node_modules
+  const devPath = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg')
+  if (fs.existsSync(devPath)) return devPath
+  throw new Error('ffmpeg binary not found. Run: npm install ffmpeg-static')
+}
 
 /**
  * Resolve the whisper binary — newer versions use `whisper-cli`,
@@ -59,14 +53,15 @@ function convertToWav(inputPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     console.log('[steno] ffmpeg converting:', inputPath, '→', outputPath)
 
-    const ffmpeg = spawn('ffmpeg', [
+    const ffmpegBin = getFfmpegPath()
+    const ffmpeg = spawn(ffmpegBin, [
       '-i', inputPath,
       '-ar', '16000',
       '-ac', '1',
       '-c:a', 'pcm_s16le',
       '-y',
       outputPath,
-    ], { env: shellEnv })
+    ])
 
     let stderrLog = ''
     ffmpeg.stderr.on('data', (data: Buffer) => {
@@ -84,7 +79,7 @@ function convertToWav(inputPath: string): Promise<string> {
     ffmpeg.on('error', (err) => {
       reject(
         new Error(
-          `ffmpeg not found (${err.message}). Install it with:\n  brew install ffmpeg`
+          `ffmpeg error: ${err.message}`
         )
       )
     })
@@ -142,7 +137,7 @@ export async function transcribe(
       '-t', String(Math.max(1, os.cpus().length - 2)),
     ]
 
-    const whisper = spawn(whisperPath, args, { env: shellEnv })
+    const whisper = spawn(whisperPath, args)
     activeWhisperProcess = whisper
     let stdout = ''
     let stderr = ''
