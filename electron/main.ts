@@ -88,7 +88,7 @@ autoUpdater.on('update-downloaded', () => {
     })
     .then((result) => {
       if (result.response === 0) {
-        autoUpdater.quitAndInstall()
+        setImmediate(() => autoUpdater.quitAndInstall(false, true))
       }
     })
 })
