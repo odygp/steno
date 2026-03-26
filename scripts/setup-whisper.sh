@@ -35,7 +35,8 @@ cd lib/whisper.cpp
 
 cmake -B build \
   -DWHISPER_COREML=OFF \
-  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
 
 cmake --build build --config Release -j$(sysctl -n hw.ncpu)
 
