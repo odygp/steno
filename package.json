@@ -1,6 +1,6 @@
 {
   "name": "steno",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "private": true,
   "description": "A minimal, offline transcription tool for Mac",
   "author": "holy.gd",
@@ -61,7 +61,8 @@
         "to": "whisper",
         "filter": [
           "whisper-cli",
-          "main"
+          "main",
+          "*.dylib"
         ]
       },
       {

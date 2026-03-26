@@ -15,7 +15,7 @@ function getFfmpegPath(): string {
   // In development, use ffmpeg-static from node_modules
   const devPath = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg')
   if (fs.existsSync(devPath)) return devPath
-  throw new Error('ffmpeg binary not found. Run: npm install ffmpeg-static')
+  throw new Error('ffmpeg binary not found. Please reinstall the application.')
 }
 
 /**
@@ -38,7 +38,7 @@ function getWhisperPath(): string {
   if (fs.existsSync(fallback)) return fallback
 
   throw new Error(
-    'whisper.cpp binary not found.\nRun: npm run setup:whisper'
+    'Whisper engine not found. Please reinstall the application.'
   )
 }
 
@@ -115,7 +115,7 @@ export async function transcribe(
 
   if (!fs.existsSync(modelPath)) {
     throw new Error(
-      'Whisper model not found.\nRun: npm run setup:whisper'
+      'Whisper model not found. Please download a model from the Models tab.'
     )
   }
 
@@ -137,7 +137,10 @@ export async function transcribe(
       '-t', String(Math.max(1, os.cpus().length - 2)),
     ]
 
-    const whisper = spawn(whisperPath, args)
+    const whisperDir = path.dirname(whisperPath)
+    const whisper = spawn(whisperPath, args, {
+      env: { ...process.env, DYLD_LIBRARY_PATH: whisperDir },
+    })
     activeWhisperProcess = whisper
     let stdout = ''
     let stderr = ''

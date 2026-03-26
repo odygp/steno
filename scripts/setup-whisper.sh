@@ -39,6 +39,42 @@ cmake -B build \
 
 cmake --build build --config Release -j$(sysctl -n hw.ncpu)
 
+# ── Collect shared libraries next to the binary ──
+echo "→ Collecting shared libraries into build/bin/…"
+cp build/src/libwhisper*.dylib build/bin/ 2>/dev/null || true
+cp build/ggml/src/libggml*.dylib build/bin/ 2>/dev/null || true
+cp build/ggml/src/ggml-metal/libggml-metal*.dylib build/bin/ 2>/dev/null || true
+cp build/ggml/src/ggml-blas/libggml-blas*.dylib build/bin/ 2>/dev/null || true
+cp build/ggml/src/ggml-cpu/libggml-cpu*.dylib build/bin/ 2>/dev/null || true
+
+# ── Fix rpaths so binaries find dylibs next to themselves ──
+echo "→ Patching library paths for portability…"
+cd build/bin
+
+# Remove all existing rpaths from whisper-cli and add @executable_path/
+for rpath in $(otool -l whisper-cli | grep -A2 LC_RPATH | grep "path " | awk '{print $2}'); do
+  install_name_tool -delete_rpath "$rpath" whisper-cli 2>/dev/null || true
+done
+install_name_tool -add_rpath @executable_path/ whisper-cli 2>/dev/null || true
+
+# Rewrite @rpath → @loader_path in all dylibs so they find each other
+for dylib in *.dylib; do
+  # Remove all existing rpaths
+  for rpath in $(otool -l "$dylib" | grep -A2 LC_RPATH | grep "path " | awk '{print $2}'); do
+    install_name_tool -delete_rpath "$rpath" "$dylib" 2>/dev/null || true
+  done
+  install_name_tool -add_rpath @loader_path/ "$dylib" 2>/dev/null || true
+
+  # Rewrite install name to use @loader_path
+  old_id=$(otool -D "$dylib" | tail -1)
+  if [[ "$old_id" == @rpath/* ]]; then
+    base=$(basename "$old_id")
+    install_name_tool -id "@loader_path/$base" "$dylib" 2>/dev/null || true
+  fi
+done
+
+cd ../..
+
 cd ../..
 
 # ── Download the base model ──
