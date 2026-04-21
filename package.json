@@ -1,6 +1,6 @@
 {
   "name": "steno",
-  "version": "1.1.4",
+  "version": "1.2.0",
   "private": true,
   "description": "A minimal, offline transcription tool for Mac",
   "author": "holy.gd",
@@ -24,7 +24,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.20",
-    "electron": "^33.2.0",
+    "electron": "^36.0.0",
     "electron-builder": "^25.1.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",

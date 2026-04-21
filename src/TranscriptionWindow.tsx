@@ -57,7 +57,7 @@ export default function TranscriptionWindow() {
         >
           {/* Text area */}
           <div className="flex-1 border border-zinc-200 rounded-xl p-6 overflow-y-auto min-h-0">
-            <p className="text-[14px] leading-[1.8] text-zinc-800 whitespace-pre-wrap">
+            <p className="text-[14px] leading-[1.8] text-zinc-800 whitespace-pre-wrap select-text cursor-text">
               {text}
             </p>
           </div>

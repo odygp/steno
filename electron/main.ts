@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, Menu, MenuItem, ipcMain, dialog } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import path from 'path'
 import fs from 'fs'
@@ -69,6 +69,28 @@ function createTranscriptionWindow(text: string, fileName: string) {
 }
 
 app.setName('Steno')
+
+// Build a native context menu on right-click. Passing `frame` to popup() lets
+// macOS inject Writing Tools, Services, Autofill, and spellcheck suggestions.
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('context-menu', (_e, params) => {
+    const menu = new Menu()
+    const { editFlags, isEditable, selectionText } = params
+
+    if (isEditable) {
+      if (editFlags.canCut) menu.append(new MenuItem({ role: 'cut' }))
+      if (editFlags.canCopy) menu.append(new MenuItem({ role: 'copy' }))
+      if (editFlags.canPaste) menu.append(new MenuItem({ role: 'paste' }))
+      if (editFlags.canSelectAll) menu.append(new MenuItem({ role: 'selectAll' }))
+    } else if (selectionText && selectionText.trim().length > 0) {
+      if (editFlags.canCopy) menu.append(new MenuItem({ role: 'copy' }))
+      if (editFlags.canSelectAll) menu.append(new MenuItem({ role: 'selectAll' }))
+    }
+
+    menu.popup({ frame: params.frame ?? undefined })
+  })
+})
+
 app.whenReady().then(() => {
   createWindow()
 
