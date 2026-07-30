@@ -86,6 +86,14 @@ function convertToWav(inputPath: string): Promise<string> {
   })
 }
 
+/**
+ * Collapse runaway decoder loops — a phrase repeated verbatim three or more
+ * times in a row is a hallucination, not speech. Keeps one occurrence.
+ */
+function collapseRepeats(text: string): string {
+  return text.replace(/(.{10,120}?)\1{2,}/g, '$1')
+}
+
 // ── Active process tracking (for cancellation) ──
 
 let activeWhisperProcess: ReturnType<typeof spawn> | null = null
@@ -134,6 +142,11 @@ export async function transcribe(
       '-f', wavPath,
       '--no-timestamps',
       '--print-progress',
+      // Don't carry text context between windows. Otherwise a single
+      // hallucination (e.g. a subtitle credit line) becomes the prompt for the
+      // next window and repeats to the end of the file, replacing real speech.
+      '-mc', '0',
+      '-sns', // suppress non-speech tokens, which trigger those hallucinations
       '-t', String(Math.max(1, os.cpus().length - 2)),
     ]
 
@@ -180,11 +193,13 @@ export async function transcribe(
       if (code === 0) {
         onProgress('Finalizing…', 95)
 
-        const cleaned = stdout
-          .split('\n')
-          .map((l) => l.replace(/^\[.*?]\s*/, '').trim())
-          .filter((l) => l.length > 0)
-          .join('\n')
+        const cleaned = collapseRepeats(
+          stdout
+            .split('\n')
+            .map((l) => l.replace(/^\[.*?]\s*/, '').trim())
+            .filter((l) => l.length > 0)
+            .join('\n')
+        )
 
         setTimeout(() => {
           onProgress('Done', 100)
