@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "setup:whisper": "bash scripts/setup-whisper.sh",
+    "prepackage": "bash scripts/ensure-native.sh",
     "package": "electron-builder"
   },
   "dependencies": {
