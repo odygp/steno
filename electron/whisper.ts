@@ -4,6 +4,7 @@ import fs from 'fs'
 import os from 'os'
 import { app } from 'electron'
 import { getModelPath as getModelFilePath, ModelId } from './models'
+import { diarize, labelSpeakers, Segment } from './diarize'
 
 type ProgressCallback = (step: string, percent: number) => void
 type TextCallback = (text: string) => void
@@ -95,15 +96,42 @@ function collapseRepeats(text: string): string {
   return text.replace(/(.{10,120}?)\1{2,}/g, '$1')
 }
 
+// ── Whisper stdout parsing ──
+
+const SEGMENT_LINE = /^\[(\d+):(\d+):([\d.]+) --> (\d+):(\d+):([\d.]+)\]\s*(.*)$/
+
+/** Turn `[00:00:05.940 --> 00:00:10.320]   text` lines into timed segments (seconds). */
+function parseSegments(stdout: string): Segment[] {
+  const segments: Segment[] = []
+  for (const line of stdout.split('\n')) {
+    const m = line.trim().match(SEGMENT_LINE)
+    if (!m || !m[7].trim()) continue
+    segments.push({
+      from: +m[1] * 3600 + +m[2] * 60 + +m[3],
+      to: +m[4] * 3600 + +m[5] * 60 + +m[6],
+      text: m[7].trim(),
+    })
+  }
+  return segments
+}
+
+function stripTimestamps(chunk: string): string {
+  return chunk
+    .split('\n')
+    .map((l) => l.replace(/^\[.*?]\s*/, '').trim())
+    .filter((l) => l.length > 0)
+    .join('\n')
+}
+
 // ── Active process tracking (for cancellation) ──
 
-let activeWhisperProcess: ReturnType<typeof spawn> | null = null
+let activeProcess: ReturnType<typeof spawn> | null = null
 let activeWavPath: string | null = null
 
 export function cancelTranscription(): void {
-  if (activeWhisperProcess) {
-    activeWhisperProcess.kill('SIGTERM')
-    activeWhisperProcess = null
+  if (activeProcess) {
+    activeProcess.kill('SIGTERM')
+    activeProcess = null
   }
   if (activeWavPath) {
     fs.unlink(activeWavPath, () => {})
@@ -117,6 +145,7 @@ export async function transcribe(
   filePath: string,
   modelId: string,
   language: string,
+  identifySpeakers: boolean,
   onProgress: ProgressCallback,
   onText: TextCallback
 ): Promise<string> {
@@ -142,7 +171,6 @@ export async function transcribe(
       '-m', modelPath,
       '-l', language,
       '-f', wavPath,
-      '--no-timestamps',
       '--print-progress',
       // Don't carry text context between windows. Otherwise a single
       // hallucination (e.g. a subtitle credit line) becomes the prompt for the
@@ -156,7 +184,7 @@ export async function transcribe(
     const whisper = spawn(whisperPath, args, {
       env: { ...process.env, DYLD_LIBRARY_PATH: whisperDir },
     })
-    activeWhisperProcess = whisper
+    activeProcess = whisper
     let stdout = ''
     let stderr = ''
 
@@ -165,7 +193,8 @@ export async function transcribe(
     whisper.stdout.on('data', (data: Buffer) => {
       const chunk = data.toString()
       stdout += chunk
-      if (chunk.trim()) onText(chunk.trim())
+      const text = stripTimestamps(chunk)
+      if (text) onText(text)
     })
 
     whisper.stderr.on('data', (data: Buffer) => {
@@ -181,43 +210,61 @@ export async function transcribe(
       const match = chunk.match(/progress\s*=\s*(\d+)%/)
       if (match) {
         const pct = parseInt(match[1], 10)
-        onProgress('Transcribing offline…', 30 + Math.floor(pct * 0.6))
+        // Leave room on the bar for speaker identification when it runs next
+        const share = identifySpeakers ? 0.45 : 0.6
+        onProgress('Transcribing offline…', 30 + Math.floor(pct * share))
       }
     })
 
-    whisper.on('close', (code, signal) => {
-      activeWhisperProcess = null
-      // Clean up temp file
-      fs.unlink(wavPath, () => {})
-      activeWavPath = null
+    whisper.on('close', async (code, signal) => {
+      activeProcess = null
+      const cleanup = () => {
+        fs.unlink(wavPath, () => {})
+        activeWavPath = null
+      }
 
       if (signal === 'SIGTERM') {
+        cleanup()
         reject(new Error('Transcription cancelled'))
         return
       }
 
-      if (code === 0) {
-        onProgress('Finalizing…', 95)
+      if (code !== 0) {
+        cleanup()
+        reject(new Error(`Transcription failed:\n${stderr.slice(-500)}`))
+        return
+      }
 
-        const cleaned = collapseRepeats(
-          stdout
-            .split('\n')
-            .map((l) => l.replace(/^\[.*?]\s*/, '').trim())
-            .filter((l) => l.length > 0)
-            .join('\n')
-        )
+      try {
+        const segments = parseSegments(stdout)
+        let text = segments.map((s) => s.text).join('\n')
+
+        if (identifySpeakers) {
+          onProgress('Identifying speakers…', 75)
+          const turns = await diarize(
+            wavPath,
+            (proc) => { activeProcess = proc },
+            (pct) => onProgress('Identifying speakers…', 75 + Math.floor(pct * 0.2))
+          )
+          text = labelSpeakers(segments, turns)
+        }
+
+        onProgress('Finalizing…', 95)
+        const cleaned = collapseRepeats(text)
 
         setTimeout(() => {
           onProgress('Done', 100)
           resolve(cleaned)
         }, 300)
-      } else {
-        reject(new Error(`Transcription failed:\n${stderr.slice(-500)}`))
+      } catch (err) {
+        reject(err)
+      } finally {
+        cleanup()
       }
     })
 
     whisper.on('error', (err) => {
-      activeWhisperProcess = null
+      activeProcess = null
       fs.unlink(wavPath, () => {})
       activeWavPath = null
       reject(new Error(`Failed to start whisper: ${err.message}`))

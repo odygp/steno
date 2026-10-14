@@ -14,7 +14,7 @@ import { StenoLogo, HolyLogo } from './logos'
 declare global {
   interface Window {
     steno: {
-      transcribe: (filePath: string, modelId: string, language: string) => Promise<{
+      transcribe: (filePath: string, modelId: string, language: string, identifySpeakers: boolean) => Promise<{
         success: boolean
         text?: string
         error?: string
@@ -96,6 +96,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<string>('small')
   const [models, setModels] = useState<ModelInfo[]>([])
   const [selectedLanguage, setSelectedLanguage] = useState<string>('auto')
+  const [identifySpeakers, setIdentifySpeakers] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({})
 
   const refreshModels = useCallback(async () => {
@@ -236,7 +237,7 @@ export default function App() {
     setLiveText([])
     setError('')
 
-    const result = await window.steno.transcribe(filePath, selectedModel, selectedLanguage)
+    const result = await window.steno.transcribe(filePath, selectedModel, selectedLanguage, identifySpeakers)
 
     if (result.success && result.text) {
       await window.steno.openTranscriptionWindow(result.text, fileName)
@@ -251,7 +252,7 @@ export default function App() {
       setError(result.error || 'Unknown error')
       setActionState('error')
     }
-  }, [filePath, fileName, selectedModel, selectedLanguage, models])
+  }, [filePath, fileName, selectedModel, selectedLanguage, identifySpeakers, models])
 
   const handleCancelTranscription = useCallback(async () => {
     await window.steno.cancelTranscription()
@@ -360,6 +361,8 @@ export default function App() {
                         onSwitchToModels={() => setTab('models')}
                         selectedLanguage={selectedLanguage}
                         onSelectLanguage={setSelectedLanguage}
+                        identifySpeakers={identifySpeakers}
+                        onToggleSpeakers={() => setIdentifySpeakers((v) => !v)}
                       />
                     ) : actionState === 'error' ? (
                       <ErrorView
@@ -659,6 +662,8 @@ function FileReadyView({
   onSwitchToModels,
   selectedLanguage,
   onSelectLanguage,
+  identifySpeakers,
+  onToggleSpeakers,
 }: {
   fileName: string
   fileSize: string
@@ -671,6 +676,8 @@ function FileReadyView({
   onSwitchToModels: () => void
   selectedLanguage: string
   onSelectLanguage: (lang: string) => void
+  identifySpeakers: boolean
+  onToggleSpeakers: () => void
 }) {
   const [langDropdownOpen, setLangDropdownOpen] = useState(false)
   const [langSearch, setLangSearch] = useState('')
@@ -775,6 +782,29 @@ function FileReadyView({
             )}
           </div>
         </div>
+
+        {/* Speaker identification toggle */}
+        <button
+          onClick={onToggleSpeakers}
+          className="bg-[#161616] border border-zinc-700 rounded-lg p-3 flex items-center justify-between text-left"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
+          <div>
+            <p className="text-[12px] text-white">Identify speakers</p>
+            <p className="text-[11px] text-zinc-500 mt-0.5">Label who said what</p>
+          </div>
+          <span
+            className={`w-8 h-[18px] rounded-full p-[2px] transition-colors ${
+              identifySpeakers ? 'bg-white' : 'bg-zinc-700'
+            }`}
+          >
+            <span
+              className={`block w-[14px] h-[14px] rounded-full transition-transform ${
+                identifySpeakers ? 'translate-x-[14px] bg-black' : 'bg-zinc-400'
+              }`}
+            />
+          </span>
+        </button>
       </div>
 
       <div className="flex-1" />

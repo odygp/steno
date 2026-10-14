@@ -66,6 +66,15 @@
         ]
       },
       {
+        "from": "lib/sherpa-onnx/",
+        "to": "sherpa-onnx",
+        "filter": [
+          "sherpa-onnx-offline-speaker-diarization",
+          "*.dylib",
+          "*.onnx"
+        ]
+      },
+      {
         "from": "node_modules/ffmpeg-static/",
         "to": "ffmpeg",
         "filter": [

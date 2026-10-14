@@ -134,8 +134,8 @@ ipcMain.handle('show-open-dialog', async () => {
   return result.filePaths[0] || null
 })
 
-ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string, language: string) => {
-  console.log('[steno] transcribe:', filePath, 'model:', modelId, 'lang:', language)
+ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string, language: string, identifySpeakers: boolean) => {
+  console.log('[steno] transcribe:', filePath, 'model:', modelId, 'lang:', language, 'speakers:', identifySpeakers)
 
   const onProgress = (step: string, percent: number) => {
     mainWindow?.webContents.send('transcription:progress', { step, percent })
@@ -146,7 +146,7 @@ ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string, l
   }
 
   try {
-    const text = await transcribe(filePath, modelId, language, onProgress, onText)
+    const text = await transcribe(filePath, modelId, language, identifySpeakers, onProgress, onText)
     return { success: true, text }
   } catch (error: any) {
     if (error.message === 'Transcription cancelled') {
