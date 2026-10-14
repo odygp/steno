@@ -31,6 +31,8 @@ declare global {
         cb: (data: { text: string; fileName: string }) => void
       ) => () => void
       closeWindow: () => Promise<void>
+      getWidgetState: () => Promise<{ fileName: string; step: string; percent: number }>
+      focusMain: () => Promise<void>
       saveTranscript: (text: string, fileName: string) => Promise<boolean>
       getModels: () => Promise<
         Array<{
@@ -906,6 +908,13 @@ function ProcessingScreen({
 }) {
   const fadeTop = 'linear-gradient(to bottom, transparent, black 35%)'
 
+  // Segments type out one after another: a segment appears only once the one
+  // before it has finished. Ids are consecutive, so "done up to id N" is enough.
+  const [doneUpTo, setDoneUpTo] = useState<number | null>(null)
+  const typingId = (doneUpTo ?? (segments[0]?.id ?? 1) - 1) + 1
+  const visible = segments.filter((s) => s.id <= typingId)
+  const queued = segments.length - visible.length
+
   return (
     <motion.div {...fade} className="flex flex-col h-full relative">
       {/* Drag region */}
@@ -920,18 +929,19 @@ function ProcessingScreen({
         style={{ maskImage: fadeTop, WebkitMaskImage: fadeTop }}
       >
         <div className="absolute inset-x-0 bottom-0 flex flex-col gap-4">
-          {segments.map((s, i) => (
+          {visible.map((s, i) => (
             <motion.p
               key={s.id}
               layout="position"
-              initial={{ opacity: 0, filter: 'blur(8px)', y: 6 }}
-              animate={{ opacity: 1, filter: 'blur(0px)', y: 0 }}
-              transition={{ duration: 1.2, ease: 'easeOut' }}
               className={`text-[16px] leading-relaxed transition-colors duration-1000 ${
-                i === segments.length - 1 ? 'text-white' : 'text-white/40'
+                i === visible.length - 1 ? 'text-white' : 'text-white/40'
               }`}
             >
-              {s.text}
+              {s.id === typingId ? (
+                <Typewriter text={s.text} speedup={1 + queued} onDone={() => setDoneUpTo(s.id)} />
+              ) : (
+                s.text
+              )}
             </motion.p>
           ))}
 
@@ -963,8 +973,9 @@ function ProcessingScreen({
             {step}
           </motion.p>
         </AnimatePresence>
-        <p className="text-[12px] text-white/40 text-center truncate max-w-[280px]">
-          {fileName} · {percent}%
+        <p className="flex max-w-[280px] text-[12px] text-white/40">
+          <span className="truncate">{fileName}</span>
+          <span className="shrink-0 tabular-nums">&nbsp;· {percent}%</span>
         </p>
       </div>
 
@@ -982,6 +993,25 @@ function ProcessingScreen({
       </div>
     </motion.div>
   )
+}
+
+// Types text out character by character, then calls onDone. A long segment
+// takes ~2.4 s; `speedup` shortens that when more segments are waiting, so the
+// preview never falls far behind the transcription.
+function Typewriter({ text, speedup, onDone }: { text: string; speedup: number; onDone: () => void }) {
+  const [shown, setShown] = useState(0)
+
+  useEffect(() => {
+    if (shown >= text.length) {
+      onDone()
+      return
+    }
+    const step = Math.max(1, Math.ceil(text.length / 120)) * speedup
+    const id = setTimeout(() => setShown((n) => Math.min(text.length, n + step)), 20)
+    return () => clearTimeout(id)
+  }, [shown, text, speedup, onDone])
+
+  return <>{text.slice(0, shown)}</>
 }
 
 // ── Models Tab ──

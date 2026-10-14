@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, MenuItem, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, Menu, MenuItem, ipcMain, dialog, screen } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import path from 'path'
 import fs from 'fs'
@@ -15,6 +15,10 @@ import {
 } from './models'
 
 let mainWindow: BrowserWindow | null = null
+let widgetWindow: BrowserWindow | null = null
+let widgetPosition: { x: number; y: number } | null = null // where the user last dragged it
+let transcribingFile: string | null = null
+let lastProgress = { step: '', percent: 0 }
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -37,6 +41,67 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
+
+  // While transcribing, a floating progress widget stands in for the main
+  // window whenever the user is elsewhere.
+  mainWindow.on('blur', () => {
+    if (transcribingFile) showWidget()
+  })
+  mainWindow.on('focus', () => widgetWindow?.hide())
+}
+
+function showWidget() {
+  if (!widgetWindow) {
+    const { workArea } = screen.getPrimaryDisplay()
+    const width = 300
+    const height = 88
+    widgetWindow = new BrowserWindow({
+      width,
+      height,
+      x: widgetPosition?.x ?? workArea.x + workArea.width - width - 16,
+      y: widgetPosition?.y ?? workArea.y + 16,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      skipTaskbar: true,
+      acceptFirstMouse: true, // first click on the inactive widget should count
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    })
+    widgetWindow.setAlwaysOnTop(true, 'floating')
+    widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    widgetWindow.on('closed', () => {
+      widgetWindow = null
+    })
+    // Keep it fully on screen after a drag, and remember where it was put
+    widgetWindow.on('moved', () => {
+      if (!widgetWindow) return
+      const b = widgetWindow.getBounds()
+      const { workArea: a } = screen.getDisplayMatching(b)
+      const x = Math.min(Math.max(b.x, a.x), a.x + a.width - b.width)
+      const y = Math.min(Math.max(b.y, a.y), a.y + a.height - b.height)
+      if (x !== b.x || y !== b.y) widgetWindow.setPosition(x, y)
+      widgetPosition = { x, y }
+    })
+
+    if (process.env.VITE_DEV_SERVER_URL) {
+      widgetWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#widget`)
+    } else {
+      widgetWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: 'widget' })
+    }
+    widgetWindow.once('ready-to-show', () => widgetWindow?.showInactive())
+  } else {
+    widgetWindow.showInactive()
+  }
+}
+
+function closeWidget() {
+  widgetWindow?.close()
+  widgetWindow = null
 }
 
 function createTranscriptionWindow(text: string, fileName: string) {
@@ -138,13 +203,18 @@ ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string, l
   console.log('[steno] transcribe:', filePath, 'model:', modelId, 'lang:', language, 'speakers:', identifySpeakers)
 
   const onProgress = (step: string, percent: number) => {
+    lastProgress = { step, percent }
     mainWindow?.webContents.send('transcription:progress', { step, percent })
+    widgetWindow?.webContents.send('transcription:progress', { step, percent })
   }
 
   const onText = (text: string) => {
     mainWindow?.webContents.send('transcription:text', text)
   }
 
+  transcribingFile = path.basename(filePath)
+  lastProgress = { step: '', percent: 0 }
+  if (!mainWindow?.isFocused()) showWidget()
   try {
     const text = await transcribe(filePath, modelId, language, identifySpeakers, onProgress, onText)
     return { success: true, text }
@@ -153,6 +223,9 @@ ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string, l
       return { success: false, error: 'cancelled' }
     }
     return { success: false, error: error.message }
+  } finally {
+    transcribingFile = null
+    closeWidget()
   }
 })
 
@@ -166,6 +239,14 @@ ipcMain.handle(
     createTranscriptionWindow(text, fileName)
   }
 )
+
+ipcMain.handle('get-widget-state', () => ({ fileName: transcribingFile ?? '', ...lastProgress }))
+
+ipcMain.handle('focus-main', () => {
+  app.focus({ steal: true })
+  mainWindow?.show()
+  mainWindow?.focus()
+})
 
 ipcMain.handle('close-window', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender)

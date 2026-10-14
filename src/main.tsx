@@ -2,12 +2,13 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import TranscriptionWindow from './TranscriptionWindow'
+import Widget from './Widget'
 import './index.css'
 
-const isTranscription = window.location.hash === '#transcription'
+const hash = window.location.hash
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {isTranscription ? <TranscriptionWindow /> : <App />}
+    {hash === '#transcription' ? <TranscriptionWindow /> : hash === '#widget' ? <Widget /> : <App />}
   </StrictMode>
 )

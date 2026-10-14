@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld('steno', {
 
   closeWindow: () => ipcRenderer.invoke('close-window'),
 
+  // ── Progress widget APIs ──
+  getWidgetState: () => ipcRenderer.invoke('get-widget-state'),
+
+  focusMain: () => ipcRenderer.invoke('focus-main'),
+
   saveTranscript: (text: string, fileName: string) =>
     ipcRenderer.invoke('save-transcript', text, fileName),
 
