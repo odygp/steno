@@ -44,6 +44,9 @@ function getWhisperPath(): string {
   )
 }
 
+// Silero voice-activity model, shipped next to the whisper binary.
+const VAD_MODEL = 'ggml-silero-v6.2.0.bin'
+
 // ── Convert any audio/video to 16 kHz mono WAV via ffmpeg ──
 
 function convertToWav(inputPath: string): Promise<string> {
@@ -181,6 +184,10 @@ export async function transcribe(
       // next window and repeats to the end of the file, replacing real speech.
       '-mc', '0',
       '-sns', // suppress non-speech tokens, which trigger those hallucinations
+      // Skip silence entirely. Over silent stretches whisper invents text
+      // ("Υπότιτλοι AUTHORWAVE", "Subtitles by…") once per 30 s window.
+      // Timestamps stay on the original timeline, so speaker labels still line up.
+      '--vad', '-vm', path.join(path.dirname(whisperPath), VAD_MODEL),
       '-t', String(Math.max(1, os.cpus().length - 2)),
     ]
 

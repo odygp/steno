@@ -76,6 +76,13 @@ done
 
 cd ../..
 
+# ── Voice activity detection model (skips silence, which whisper hallucinates over) ──
+if [ ! -f build/bin/ggml-silero-v6.2.0.bin ]; then
+  echo "→ Downloading Silero VAD model (~1 MB)…"
+  curl -L --progress-bar -o build/bin/ggml-silero-v6.2.0.bin \
+    "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin"
+fi
+
 cd ../..
 
 # ── Speaker identification (sherpa-onnx) ──

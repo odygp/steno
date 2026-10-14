@@ -62,7 +62,8 @@
         "filter": [
           "whisper-cli",
           "main",
-          "*.dylib"
+          "*.dylib",
+          "ggml-silero-*.bin"
         ]
       },
       {
