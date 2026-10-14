@@ -1,11 +1,38 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
+
+// Speaker identification labels paragraphs as "Speaker 1: …"
+const SPEAKER_LABEL = /^Speaker (\d+): /
 
 export default function TranscriptionWindow() {
   const [text, setText] = useState('')
   const [fileName, setFileName] = useState('')
   const [copied, setCopied] = useState(false)
+  const [names, setNames] = useState<Record<string, string>>({})
+
+  const paragraphs = useMemo(
+    () =>
+      text.split('\n\n').map((p) => {
+        const m = p.match(SPEAKER_LABEL)
+        return m ? { speaker: m[1], body: p.slice(m[0].length) } : { speaker: null, body: p }
+      }),
+    [text]
+  )
+
+  // Each speaker once, in order of appearance, with their first words as a hint
+  const speakers = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const p of paragraphs) if (p.speaker && !seen.has(p.speaker)) seen.set(p.speaker, p.body)
+    return [...seen].map(([id, firstWords]) => ({ id, firstWords }))
+  }, [paragraphs])
+
+  const nameOf = (id: string) => names[id]?.trim() || `Speaker ${id}`
+
+  // What gets copied and exported — speaker labels replaced by the chosen names
+  const exportText = paragraphs
+    .map((p) => (p.speaker ? `${nameOf(p.speaker)}: ${p.body}` : p.body))
+    .join('\n\n')
 
   useEffect(() => {
     return window.steno.onTranscriptData(({ text, fileName }) => {
@@ -15,14 +42,14 @@ export default function TranscriptionWindow() {
   }, [])
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(text)
+    await navigator.clipboard.writeText(exportText)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-  }, [text])
+  }, [exportText])
 
   const handleDownload = useCallback(async () => {
-    await window.steno.saveTranscript(text, fileName)
-  }, [text, fileName])
+    await window.steno.saveTranscript(exportText, fileName)
+  }, [exportText, fileName])
 
   const handleClose = useCallback(() => {
     window.steno.closeWindow()
@@ -55,11 +82,34 @@ export default function TranscriptionWindow() {
           transition={{ duration: 0.3, delay: 0.1 }}
           className="w-full max-w-[640px] flex flex-col gap-5 flex-1 min-h-0"
         >
+          {/* Speaker names */}
+          {speakers.length > 0 && (
+            <div className="border border-zinc-200 rounded-xl p-4 flex flex-col gap-2 shrink-0">
+              <p className="text-[11px] text-zinc-500">Speakers</p>
+              {speakers.map((sp) => (
+                <div key={sp.id} className="flex items-center gap-3">
+                  <input
+                    value={names[sp.id] ?? ''}
+                    onChange={(e) => setNames((prev) => ({ ...prev, [sp.id]: e.target.value }))}
+                    placeholder={`Speaker ${sp.id}`}
+                    className="w-[180px] h-8 shrink-0 border border-zinc-300 rounded-lg px-3 text-[13px] text-black placeholder-zinc-400 outline-none focus:border-black transition-colors"
+                  />
+                  <p className="text-[12px] text-zinc-400 truncate">“{sp.firstWords}”</p>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Text area */}
           <div className="flex-1 border border-zinc-200 rounded-xl p-6 overflow-y-auto min-h-0">
-            <p className="text-[14px] leading-[1.8] text-zinc-800 whitespace-pre-wrap select-text cursor-text">
-              {text}
-            </p>
+            <div className="text-[14px] leading-[1.8] text-zinc-800 whitespace-pre-wrap select-text cursor-text">
+              {paragraphs.map((p, i) => (
+                <p key={i} className={i > 0 ? 'mt-[1.8em]' : ''}>
+                  {p.speaker && <span className="font-semibold text-black">{nameOf(p.speaker)}: </span>}
+                  {p.body}
+                </p>
+              ))}
+            </div>
           </div>
 
           {/* Action buttons */}
