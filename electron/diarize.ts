@@ -10,12 +10,6 @@ type Turn = { from: number; to: number; speaker: string }
 // both voices into one speaker, 0.7 too; 0.6 separated them cleanly.
 const CLUSTER_THRESHOLD = 0.6
 
-// Clusters with less than this share of total speech are crosstalk or
-// backchannels ("ok", "right"), not real speakers — their segments go to
-// whichever real speaker is nearest. Such a cluster reached 5.7% on a 5-minute
-// interview excerpt; the cost is that a real speaker under 10% gets absorbed.
-const MIN_SPEAKER_SHARE = 0.1
-
 function getSherpaDir(): string {
   const dir = app.isPackaged
     ? path.join(process.resourcesPath, 'sherpa-onnx')
@@ -89,12 +83,10 @@ export function diarize(
  *
  *   Speaker 2: …
  */
-export function labelSpeakers(segments: Segment[], allTurns: Turn[]): string {
-  const total = new Map<string, number>()
-  for (const t of allTurns) total.set(t.speaker, (total.get(t.speaker) || 0) + t.to - t.from)
-  const speech = [...total.values()].reduce((a, b) => a + b, 0)
-  const turns = allTurns.filter((t) => total.get(t.speaker)! >= speech * MIN_SPEAKER_SHARE)
-
+// Every cluster is kept, even small ones: a speaker who mostly says "ok" can
+// be split across several clusters that are each tiny. Naming two speakers the
+// same in the transcript window merges them.
+export function labelSpeakers(segments: Segment[], turns: Turn[]): string {
   if (turns.length === 0) return segments.map((s) => s.text).join('\n')
 
   // Number speakers in order of first appearance — sherpa's ids are arbitrary.

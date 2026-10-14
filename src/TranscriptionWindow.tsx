@@ -29,10 +29,18 @@ export default function TranscriptionWindow() {
 
   const nameOf = (id: string) => names[id]?.trim() || `Speaker ${id}`
 
-  // What gets copied and exported — speaker labels replaced by the chosen names
-  const exportText = paragraphs
-    .map((p) => (p.speaker ? `${nameOf(p.speaker)}: ${p.body}` : p.body))
-    .join('\n\n')
+  // Paragraphs with the chosen names. One person is sometimes split across
+  // several speakers; giving them the same name joins their paragraphs.
+  const named: { name: string | null; body: string }[] = []
+  for (const p of paragraphs) {
+    const name = p.speaker ? nameOf(p.speaker) : null
+    const last = named[named.length - 1]
+    if (name && last?.name === name) last.body += ' ' + p.body
+    else named.push({ name, body: p.body })
+  }
+
+  // What gets copied and exported
+  const exportText = named.map((p) => (p.name ? `${p.name}: ${p.body}` : p.body)).join('\n\n')
 
   useEffect(() => {
     return window.steno.onTranscriptData(({ text, fileName }) => {
@@ -103,9 +111,9 @@ export default function TranscriptionWindow() {
           {/* Text area */}
           <div className="flex-1 border border-zinc-200 rounded-xl p-6 overflow-y-auto min-h-0">
             <div className="text-[14px] leading-[1.8] text-zinc-800 whitespace-pre-wrap select-text cursor-text">
-              {paragraphs.map((p, i) => (
+              {named.map((p, i) => (
                 <p key={i} className={i > 0 ? 'mt-[1.8em]' : ''}>
-                  {p.speaker && <span className="font-semibold text-black">{nameOf(p.speaker)}: </span>}
+                  {p.name && <span className="font-semibold text-black">{p.name}: </span>}
                   {p.body}
                 </p>
               ))}
