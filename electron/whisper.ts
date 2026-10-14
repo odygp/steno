@@ -90,9 +90,13 @@ function convertToWav(inputPath: string): Promise<string> {
 /**
  * Collapse runaway decoder loops — a phrase repeated verbatim three or more
  * times in a row is a hallucination, not speech. Keeps one occurrence.
+ * Covers repeats within a line and the same line repeated across consecutive
+ * lines (one per 30 s window over silence).
  */
 function collapseRepeats(text: string): string {
-  return text.replace(/(.{10,120}?)\1{2,}/g, '$1')
+  return text
+    .replace(/(.{10,120}?)\1{2,}/g, '$1')
+    .replace(/^(.+)(?:\n\1$){2,}/gm, '$1')
 }
 
 // ── Active process tracking (for cancellation) ──
