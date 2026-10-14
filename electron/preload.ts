@@ -22,6 +22,15 @@ contextBridge.exposeInMainWorld('steno', {
     }
   },
 
+  onText: (callback: (text: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, text: string) =>
+      callback(text)
+    ipcRenderer.on('transcription:text', handler)
+    return () => {
+      ipcRenderer.removeListener('transcription:text', handler)
+    }
+  },
+
   showOpenDialog: () => ipcRenderer.invoke('show-open-dialog'),
 
   openTranscriptionWindow: (text: string, fileName: string) =>

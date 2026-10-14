@@ -141,8 +141,12 @@ ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string, l
     mainWindow?.webContents.send('transcription:progress', { step, percent })
   }
 
+  const onText = (text: string) => {
+    mainWindow?.webContents.send('transcription:text', text)
+  }
+
   try {
-    const text = await transcribe(filePath, modelId, language, onProgress)
+    const text = await transcribe(filePath, modelId, language, onProgress, onText)
     return { success: true, text }
   } catch (error: any) {
     if (error.message === 'Transcription cancelled') {

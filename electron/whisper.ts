@@ -6,6 +6,7 @@ import { app } from 'electron'
 import { getModelPath as getModelFilePath, ModelId } from './models'
 
 type ProgressCallback = (step: string, percent: number) => void
+type TextCallback = (text: string) => void
 
 // Resolve the bundled ffmpeg binary path.
 function getFfmpegPath(): string {
@@ -116,7 +117,8 @@ export async function transcribe(
   filePath: string,
   modelId: string,
   language: string,
-  onProgress: ProgressCallback
+  onProgress: ProgressCallback,
+  onText: TextCallback
 ): Promise<string> {
   const whisperPath = getWhisperPath()
   const modelPath = getModelFilePath(modelId as ModelId)
@@ -158,8 +160,12 @@ export async function transcribe(
     let stdout = ''
     let stderr = ''
 
+    // whisper.cpp flushes stdout after every segment, so each chunk is
+    // (roughly) one freshly decoded segment — stream it to the UI.
     whisper.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString()
+      const chunk = data.toString()
+      stdout += chunk
+      if (chunk.trim()) onText(chunk.trim())
     })
 
     whisper.stderr.on('data', (data: Buffer) => {

@@ -24,6 +24,7 @@ declare global {
       onProgress: (
         cb: (data: { step: string; percent: number }) => void
       ) => () => void
+      onText: (cb: (text: string) => void) => () => void
       showOpenDialog: () => Promise<string | null>
       openTranscriptionWindow: (text: string, fileName: string) => Promise<void>
       onTranscriptData: (
@@ -59,6 +60,8 @@ type ModelInfo = {
   status: string
 }
 
+type LiveSegment = { id: number; text: string }
+
 type Tab = 'actions' | 'models' | 'about'
 type ActionState = 'idle' | 'dragover' | 'file-ready' | 'processing' | 'error'
 type AppPhase = 'loading' | 'onboarding' | 'splash' | 'main'
@@ -88,6 +91,7 @@ export default function App() {
   const [filePath, setFilePath] = useState('')
   const [step, setStep] = useState('')
   const [percent, setPercent] = useState(0)
+  const [liveText, setLiveText] = useState<LiveSegment[]>([])
   const [error, setError] = useState('')
   const [selectedModel, setSelectedModel] = useState<string>('small')
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -128,6 +132,15 @@ export default function App() {
     return window.steno.onProgress(({ step, percent }) => {
       setStep(step)
       setPercent(percent)
+    })
+  }, [])
+
+  // Live transcript — keep only the latest segments, older ones fade off the top
+  useEffect(() => {
+    let id = 0
+    return window.steno.onText((text) => {
+      id += 1
+      setLiveText((prev) => [...prev.slice(-11), { id, text }])
     })
   }, [])
 
@@ -220,6 +233,7 @@ export default function App() {
     setActionState('processing')
     setStep('Preparing audio…')
     setPercent(0)
+    setLiveText([])
     setError('')
 
     const result = await window.steno.transcribe(filePath, selectedModel, selectedLanguage)
@@ -272,6 +286,7 @@ export default function App() {
             key="processing"
             step={step}
             percent={percent}
+            segments={liveText}
             fileName={fileName}
             onCancel={handleCancelTranscription}
           />
@@ -849,66 +864,77 @@ function FileCard({
 function ProcessingScreen({
   step,
   percent,
+  segments,
   fileName,
   onCancel,
 }: {
   step: string
   percent: number
+  segments: LiveSegment[]
   fileName: string
   onCancel: () => void
 }) {
+  const fadeTop = 'linear-gradient(to bottom, transparent, black 35%)'
+
   return (
-    <motion.div {...fade} className="flex flex-col h-full items-center justify-center px-10 relative">
+    <motion.div {...fade} className="flex flex-col h-full relative">
       {/* Drag region */}
       <div
         className="absolute top-0 left-0 right-0 h-12"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       />
 
-      {/* Center content */}
-      <div className="flex flex-col items-center gap-8">
-        {/* Pulsing dot + step label */}
-        <div className="flex flex-col items-center gap-[25px]">
-          <motion.div
-            className="w-3 h-3 rounded-full bg-white"
-            animate={{
-              opacity: [0.15, 1, 0.15],
-              scale: [0.8, 1, 0.8],
-            }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          <AnimatePresence mode="wait">
+      {/* Live transcript — each segment develops in place as whisper decodes it */}
+      <div
+        className="flex-1 min-h-0 relative mx-10 mt-14 overflow-hidden"
+        style={{ maskImage: fadeTop, WebkitMaskImage: fadeTop }}
+      >
+        <div className="absolute inset-x-0 bottom-0 flex flex-col gap-4">
+          {segments.map((s, i) => (
             <motion.p
-              key={step}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.2 }}
-              className="text-[16px] text-white text-center"
+              key={s.id}
+              layout="position"
+              initial={{ opacity: 0, filter: 'blur(8px)', y: 6 }}
+              animate={{ opacity: 1, filter: 'blur(0px)', y: 0 }}
+              transition={{ duration: 1.2, ease: 'easeOut' }}
+              className={`text-[16px] leading-relaxed transition-colors duration-1000 ${
+                i === segments.length - 1 ? 'text-white' : 'text-white/40'
+              }`}
             >
-              {step}
+              {s.text}
             </motion.p>
-          </AnimatePresence>
-        </div>
+          ))}
 
-        {/* Progress bar */}
-        <div className="w-full h-4 bg-white/15 rounded-full overflow-hidden">
-          <motion.div
-            className="h-full bg-white rounded-full"
-            initial={{ width: 0 }}
-            animate={{ width: `${percent}%` }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-          />
+          {/* Placeholder lines for the segment being decoded */}
+          <motion.div layout="position" className="flex flex-col gap-2 pt-1">
+            {['w-full', 'w-3/5'].map((width, i) => (
+              <motion.div
+                key={width}
+                className={`h-2.5 ${width} rounded-full bg-white/10`}
+                animate={{ opacity: [0.4, 1, 0.4] }}
+                transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut', delay: i * 0.2 }}
+              />
+            ))}
+          </motion.div>
         </div>
       </div>
 
-      {/* File name + percentage */}
-      <div className="flex flex-col items-center gap-1 mt-8">
-        <p className="text-[12px] text-white/50 text-center truncate max-w-[280px]">
-          {fileName}
-        </p>
-        <p className="text-[12px] text-white/50 text-center">
-          {percent}%
+      {/* Step label + file name + percentage */}
+      <div className="flex flex-col items-center gap-1 pt-6 pb-20 px-10 shrink-0">
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={step}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2 }}
+            className="text-[13px] text-white/70 text-center"
+          >
+            {step}
+          </motion.p>
+        </AnimatePresence>
+        <p className="text-[12px] text-white/40 text-center truncate max-w-[280px]">
+          {fileName} · {percent}%
         </p>
       </div>
 
