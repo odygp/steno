@@ -1,66 +1,66 @@
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import os from 'os'
 import { app } from 'electron'
 
 export type Segment = { from: number; to: number; text: string }
 type Turn = { from: number; to: number; speaker: string }
 
-// Tuned on a real Greek Meet interview: 0.5 (the sherpa-onnx default) merged
-// both voices into one speaker, 0.7 too; 0.6 separated them cleanly.
-const CLUSTER_THRESHOLD = 0.6
+// FluidAudio's CoreML pipeline needs macOS 14 (Darwin 23)
+export function canIdentifySpeakers(): boolean {
+  return parseInt(os.release(), 10) >= 23
+}
 
-function getSherpaDir(): string {
+function getDiarizeDir(): string {
   const dir = app.isPackaged
-    ? path.join(process.resourcesPath, 'sherpa-onnx')
-    : path.join(process.cwd(), 'lib', 'sherpa-onnx')
-  if (!fs.existsSync(path.join(dir, 'sherpa-onnx-offline-speaker-diarization'))) {
+    ? path.join(process.resourcesPath, 'diarize')
+    : path.join(process.cwd(), 'lib', 'diarize')
+  if (!fs.existsSync(path.join(dir, 'steno-diarize'))) {
     throw new Error('Speaker identification engine not found. Please reinstall the application.')
   }
   return dir
 }
 
 /**
- * Run sherpa-onnx speaker diarization on a 16 kHz mono WAV.
- * Resolves to speaker turns in seconds, e.g. { from: 0.3, to: 6.8, speaker: 'speaker_00' }.
+ * Run speaker diarization (native/diarize, FluidAudio's offline pyannote
+ * Community-1 pipeline) on a 16 kHz mono WAV. `speakers` fixes the number of
+ * speakers; omit it to detect automatically.
+ * Resolves to speaker turns in seconds, e.g. { from: 0.3, to: 6.8, speaker: 'speaker_01' }.
  */
 export function diarize(
   wavPath: string,
+  speakers: number | null,
   onProcess: (proc: ChildProcess | null) => void,
   onProgress: (percent: number) => void
 ): Promise<Turn[]> {
-  const dir = getSherpaDir()
-  const args = [
-    `--segmentation.pyannote-model=${path.join(dir, 'segmentation.onnx')}`,
-    `--embedding.model=${path.join(dir, 'embedding.onnx')}`,
-    // CoreML is ~3x faster than CPU. It must not run alongside whisper's
-    // Metal work though — both stall waiting on the GPU — so we run after it.
-    '--segmentation.provider=coreml',
-    '--embedding.provider=coreml',
-    `--clustering.cluster-threshold=${CLUSTER_THRESHOLD}`,
-    wavPath,
-  ]
+  const dir = getDiarizeDir()
+  const args = [path.join(dir, 'models'), wavPath]
+  if (speakers) args.push(String(speakers))
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(path.join(dir, 'sherpa-onnx-offline-speaker-diarization'), args)
+    // Runs after whisper rather than alongside it: both use the GPU via CoreML/Metal
+    const proc = spawn(path.join(dir, 'steno-diarize'), args)
     onProcess(proc)
-    let output = ''
+    let stdout = ''
+    let stderr = ''
 
-    const onData = (data: Buffer) => {
+    proc.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString()
+    })
+    proc.stderr.on('data', (data: Buffer) => {
       const chunk = data.toString()
-      output += chunk
-      const match = chunk.match(/progress\s+([\d.]+)%/g)
-      if (match) onProgress(parseFloat(match[match.length - 1].replace(/[^\d.]/g, '')))
-    }
-    proc.stdout.on('data', onData)
-    proc.stderr.on('data', onData)
+      stderr += chunk
+      const match = chunk.match(/progress (\d+)%/g)
+      if (match) onProgress(parseInt(match[match.length - 1].replace(/\D/g, ''), 10))
+    })
 
     proc.on('close', (code, signal) => {
       onProcess(null)
       if (signal === 'SIGTERM') return reject(new Error('Transcription cancelled'))
-      if (code !== 0) return reject(new Error(`Speaker identification failed:\n${output.slice(-500)}`))
+      if (code !== 0) return reject(new Error(`Speaker identification failed:\n${stderr.slice(-500)}`))
 
-      const turns = [...output.matchAll(/^([\d.]+) -- ([\d.]+) (speaker_\d+)$/gm)].map((m) => ({
+      const turns = [...stdout.matchAll(/^([\d.]+) -- ([\d.]+) (speaker_\d+)$/gm)].map((m) => ({
         from: parseFloat(m[1]),
         to: parseFloat(m[2]),
         speaker: m[3],
@@ -89,7 +89,7 @@ export function diarize(
 export function labelSpeakers(segments: Segment[], turns: Turn[]): string {
   if (turns.length === 0) return segments.map((s) => s.text).join('\n')
 
-  // Number speakers in order of first appearance — sherpa's ids are arbitrary.
+  // Number speakers in order of first appearance — the engine's ids are arbitrary.
   const names = new Map<string, string>()
   for (const t of turns) if (!names.has(t.speaker)) names.set(t.speaker, `Speaker ${names.size + 1}`)
 

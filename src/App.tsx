@@ -14,11 +14,12 @@ import { StenoLogo, HolyLogo } from './logos'
 declare global {
   interface Window {
     steno: {
-      transcribe: (filePath: string, modelId: string, language: string, identifySpeakers: boolean) => Promise<{
+      transcribe: (filePath: string, modelId: string, language: string, speakers: number | 'auto' | null) => Promise<{
         success: boolean
         text?: string
         error?: string
       }>
+      canIdentifySpeakers: () => Promise<boolean>
       cancelTranscription: () => Promise<void>
       getPathForFile: (file: File) => string
       onProgress: (
@@ -64,6 +65,11 @@ type ModelInfo = {
 
 type LiveSegment = { id: number; text: string }
 
+// How many speakers to label: detected automatically, or fixed by the user
+// (detection struggles on short clips where one person barely speaks)
+type SpeakerCount = 'auto' | number
+const SPEAKER_COUNTS: SpeakerCount[] = ['auto', 2, 3, 4, 5]
+
 type Tab = 'actions' | 'models' | 'about'
 type ActionState = 'idle' | 'dragover' | 'file-ready' | 'processing' | 'error'
 type AppPhase = 'loading' | 'onboarding' | 'splash' | 'main'
@@ -99,7 +105,13 @@ export default function App() {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [selectedLanguage, setSelectedLanguage] = useState<string>('auto')
   const [identifySpeakers, setIdentifySpeakers] = useState(false)
+  const [speakerCount, setSpeakerCount] = useState<SpeakerCount>('auto')
+  const [canIdentifySpeakers, setCanIdentifySpeakers] = useState(true)
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    window.steno.canIdentifySpeakers().then(setCanIdentifySpeakers)
+  }, [])
 
   const refreshModels = useCallback(async () => {
     const m = await window.steno.getModels()
@@ -239,7 +251,8 @@ export default function App() {
     setLiveText([])
     setError('')
 
-    const result = await window.steno.transcribe(filePath, selectedModel, selectedLanguage, identifySpeakers)
+    const speakers = identifySpeakers && canIdentifySpeakers ? speakerCount : null
+    const result = await window.steno.transcribe(filePath, selectedModel, selectedLanguage, speakers)
 
     if (result.success && result.text) {
       await window.steno.openTranscriptionWindow(result.text, fileName)
@@ -254,7 +267,7 @@ export default function App() {
       setError(result.error || 'Unknown error')
       setActionState('error')
     }
-  }, [filePath, fileName, selectedModel, selectedLanguage, identifySpeakers, models])
+  }, [filePath, fileName, selectedModel, selectedLanguage, identifySpeakers, speakerCount, canIdentifySpeakers, models])
 
   const handleCancelTranscription = useCallback(async () => {
     await window.steno.cancelTranscription()
@@ -363,7 +376,10 @@ export default function App() {
                         onSwitchToModels={() => setTab('models')}
                         selectedLanguage={selectedLanguage}
                         onSelectLanguage={setSelectedLanguage}
-                        identifySpeakers={identifySpeakers}
+                        identifySpeakers={identifySpeakers && canIdentifySpeakers}
+                        canIdentifySpeakers={canIdentifySpeakers}
+                        speakerCount={speakerCount}
+                        onSelectSpeakerCount={setSpeakerCount}
                         onToggleSpeakers={() => setIdentifySpeakers((v) => !v)}
                       />
                     ) : actionState === 'error' ? (
@@ -666,6 +682,9 @@ function FileReadyView({
   onSelectLanguage,
   identifySpeakers,
   onToggleSpeakers,
+  canIdentifySpeakers,
+  speakerCount,
+  onSelectSpeakerCount,
 }: {
   fileName: string
   fileSize: string
@@ -680,6 +699,9 @@ function FileReadyView({
   onSelectLanguage: (lang: string) => void
   identifySpeakers: boolean
   onToggleSpeakers: () => void
+  canIdentifySpeakers: boolean
+  speakerCount: SpeakerCount
+  onSelectSpeakerCount: (count: SpeakerCount) => void
 }) {
   const [langDropdownOpen, setLangDropdownOpen] = useState(false)
   const [langSearch, setLangSearch] = useState('')
@@ -785,28 +807,51 @@ function FileReadyView({
           </div>
         </div>
 
-        {/* Speaker identification toggle */}
-        <button
-          onClick={onToggleSpeakers}
-          className="bg-[#161616] border border-zinc-700 rounded-lg p-3 flex items-center justify-between text-left"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          <div>
-            <p className="text-[12px] text-white">Identify speakers</p>
-            <p className="text-[11px] text-zinc-500 mt-0.5">Label who said what</p>
-          </div>
-          <span
-            className={`w-8 h-[18px] rounded-full p-[2px] transition-colors ${
-              identifySpeakers ? 'bg-white' : 'bg-zinc-700'
-            }`}
+        {/* Speaker identification toggle + how many speakers */}
+        <div className="bg-[#161616] border border-zinc-700 rounded-lg p-3">
+          <button
+            onClick={onToggleSpeakers}
+            disabled={!canIdentifySpeakers}
+            className="w-full flex items-center justify-between text-left disabled:opacity-50"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
+            <div>
+              <p className="text-[12px] text-white">Identify speakers</p>
+              <p className="text-[11px] text-zinc-500 mt-0.5">
+                {canIdentifySpeakers ? 'Label who said what' : 'Requires macOS 14 or later'}
+              </p>
+            </div>
             <span
-              className={`block w-[14px] h-[14px] rounded-full transition-transform ${
-                identifySpeakers ? 'translate-x-[14px] bg-black' : 'bg-zinc-400'
+              className={`w-8 h-[18px] rounded-full p-[2px] transition-colors ${
+                identifySpeakers ? 'bg-white' : 'bg-zinc-700'
               }`}
-            />
-          </span>
-        </button>
+            >
+              <span
+                className={`block w-[14px] h-[14px] rounded-full transition-transform ${
+                  identifySpeakers ? 'translate-x-[14px] bg-black' : 'bg-zinc-400'
+                }`}
+              />
+            </span>
+          </button>
+          {identifySpeakers && (
+            <div className="flex gap-1.5 mt-3">
+              {SPEAKER_COUNTS.map((count) => (
+                <button
+                  key={count}
+                  onClick={() => onSelectSpeakerCount(count)}
+                  className={`flex-1 h-7 rounded-md text-[12px] transition-colors ${
+                    count === speakerCount
+                      ? 'bg-[#1e1e1e] border border-white text-white'
+                      : 'border border-zinc-700 text-zinc-500 hover:text-zinc-300'
+                  }`}
+                  style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                >
+                  {count === 'auto' ? 'Auto' : count}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex-1" />

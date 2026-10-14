@@ -2,8 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('steno', {
   // ── Main window APIs ──
-  transcribe: (filePath: string, modelId: string, language: string, identifySpeakers: boolean) =>
-    ipcRenderer.invoke('transcribe', filePath, modelId, language, identifySpeakers),
+  transcribe: (filePath: string, modelId: string, language: string, speakers: number | 'auto' | null) =>
+    ipcRenderer.invoke('transcribe', filePath, modelId, language, speakers),
+
+  canIdentifySpeakers: () => ipcRenderer.invoke('can-identify-speakers'),
 
   cancelTranscription: () => ipcRenderer.invoke('cancel-transcription'),
 

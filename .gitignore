@@ -7,3 +7,4 @@ models/
 *.app
 out/
 .DS_Store
+.build/

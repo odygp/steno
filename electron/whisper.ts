@@ -152,7 +152,8 @@ export async function transcribe(
   filePath: string,
   modelId: string,
   language: string,
-  identifySpeakers: boolean,
+  // null: no speaker labels; 'auto': detect how many; a number: exactly that many
+  speakers: number | 'auto' | null,
   onProgress: ProgressCallback,
   onText: TextCallback
 ): Promise<string> {
@@ -222,7 +223,7 @@ export async function transcribe(
       if (match) {
         const pct = parseInt(match[1], 10)
         // Leave room on the bar for speaker identification when it runs next
-        const share = identifySpeakers ? 0.45 : 0.6
+        const share = speakers !== null ? 0.45 : 0.6
         onProgress('Transcribing offline…', 30 + Math.floor(pct * share))
       }
     })
@@ -250,10 +251,11 @@ export async function transcribe(
         const segments = parseSegments(stdout)
         let text = segments.map((s) => s.text).join('\n')
 
-        if (identifySpeakers) {
+        if (speakers !== null) {
           onProgress('Identifying speakers…', 75)
           const turns = await diarize(
             wavPath,
+            speakers === 'auto' ? null : speakers,
             (proc) => { activeProcess = proc },
             (pct) => onProgress('Identifying speakers…', 75 + Math.floor(pct * 0.2))
           )

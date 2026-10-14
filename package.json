@@ -67,12 +67,11 @@
         ]
       },
       {
-        "from": "lib/sherpa-onnx/",
-        "to": "sherpa-onnx",
+        "from": "lib/diarize/",
+        "to": "diarize",
         "filter": [
-          "sherpa-onnx-offline-speaker-diarization",
-          "*.dylib",
-          "*.onnx"
+          "steno-diarize",
+          "models/**/*"
         ]
       },
       {

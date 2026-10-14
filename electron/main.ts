@@ -3,6 +3,7 @@ import { autoUpdater } from 'electron-updater'
 import path from 'path'
 import fs from 'fs'
 import { transcribe, cancelTranscription } from './whisper'
+import { canIdentifySpeakers } from './diarize'
 import {
   getAllModelsStatus,
   getModelInfo,
@@ -199,8 +200,8 @@ ipcMain.handle('show-open-dialog', async () => {
   return result.filePaths[0] || null
 })
 
-ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string, language: string, identifySpeakers: boolean) => {
-  console.log('[steno] transcribe:', filePath, 'model:', modelId, 'lang:', language, 'speakers:', identifySpeakers)
+ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string, language: string, speakers: number | 'auto' | null) => {
+  console.log('[steno] transcribe:', filePath, 'model:', modelId, 'lang:', language, 'speakers:', speakers)
 
   const onProgress = (step: string, percent: number) => {
     lastProgress = { step, percent }
@@ -216,7 +217,7 @@ ipcMain.handle('transcribe', async (_event, filePath: string, modelId: string, l
   lastProgress = { step: '', percent: 0 }
   if (!mainWindow?.isFocused()) showWidget()
   try {
-    const text = await transcribe(filePath, modelId, language, identifySpeakers, onProgress, onText)
+    const text = await transcribe(filePath, modelId, language, speakers, onProgress, onText)
     return { success: true, text }
   } catch (error: any) {
     if (error.message === 'Transcription cancelled') {
@@ -239,6 +240,8 @@ ipcMain.handle(
     createTranscriptionWindow(text, fileName)
   }
 )
+
+ipcMain.handle('can-identify-speakers', () => canIdentifySpeakers())
 
 ipcMain.handle('get-widget-state', () => ({ fileName: transcribingFile ?? '', ...lastProgress }))
 

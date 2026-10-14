@@ -85,37 +85,22 @@ fi
 
 cd ../..
 
-# ── Speaker identification (sherpa-onnx) ──
-# Prebuilt binary + onnxruntime, plus a pyannote segmentation model and a
-# wespeaker voice-embedding model. The binary finds libonnxruntime.dylib next
-# to itself via its @loader_path rpath, so everything lives in one folder.
+# ── Speaker identification (native/diarize, built on FluidAudio) ──
+# A small Swift helper around FluidAudio's offline pyannote Community-1
+# pipeline. Building it needs Xcode; its CoreML models (~21 MB) download once.
 
-SHERPA_VERSION=1.13.8
-SHERPA_DIR=lib/sherpa-onnx
-SHERPA_URL=https://github.com/k2-fsa/sherpa-onnx/releases/download
+DIARIZE_DIR=lib/diarize
 
-if [ ! -f "$SHERPA_DIR/sherpa-onnx-offline-speaker-diarization" ]; then
-  echo "→ Downloading sherpa-onnx $SHERPA_VERSION (speaker identification)…"
-  mkdir -p "$SHERPA_DIR"
-  tmp=$(mktemp -d)
-  pkg="sherpa-onnx-v$SHERPA_VERSION-osx-arm64-shared-no-tts"
-  curl -L --progress-bar -o "$tmp/$pkg.tar.bz2" "$SHERPA_URL/v$SHERPA_VERSION/$pkg.tar.bz2"
-  tar xjf "$tmp/$pkg.tar.bz2" -C "$tmp"
-  cp "$tmp/$pkg/bin/sherpa-onnx-offline-speaker-diarization" "$SHERPA_DIR/"
-  cp "$tmp/$pkg/lib/libonnxruntime.dylib" "$SHERPA_DIR/"
+echo "→ Building speaker identification helper…"
+swift build -c release --package-path native/diarize
+mkdir -p "$DIARIZE_DIR"
+cp native/diarize/.build/release/steno-diarize "$DIARIZE_DIR/"
 
-  curl -L --progress-bar -o "$tmp/seg.tar.bz2" \
-    "$SHERPA_URL/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
-  tar xjf "$tmp/seg.tar.bz2" -C "$tmp"
-  cp "$tmp/sherpa-onnx-pyannote-segmentation-3-0/model.onnx" "$SHERPA_DIR/segmentation.onnx"
-
-  curl -L --progress-bar -o "$SHERPA_DIR/embedding.onnx" \
-    "$SHERPA_URL/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx"
-  echo "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012  $SHERPA_DIR/embedding.onnx" | shasum -a 256 -c
-
-  rm -rf "$tmp"
+if [ ! -d "$DIARIZE_DIR/models/speaker-diarization" ]; then
+  echo "→ Downloading speaker identification models (~21 MB)…"
+  "$DIARIZE_DIR/steno-diarize" prepare "$DIARIZE_DIR/models"
 else
-  echo "→ sherpa-onnx already installed."
+  echo "→ Speaker identification models already downloaded."
 fi
 
 # ── Download the base model ──
